@@ -9,8 +9,10 @@ export default function AdminLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPass, setShowPass] = useState(false)
 
   async function handleLogin() {
     setLoading(true)
@@ -43,7 +45,7 @@ export default function AdminLoginPage() {
           </div>
           <div style={{ marginBottom: 20 }}>
             <p style={{ fontSize: '0.48rem', color: 'rgba(255,255,255,0.35)', letterSpacing: '0.2em', marginBottom: 6 }}>CONTRASEÑA</p>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleLogin()}
               style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, padding: '10px 12px', color: '#fff', fontSize: '0.8rem', outline: 'none', fontFamily: 'Montserrat, sans-serif' }} />
           </div>
@@ -60,3 +62,5 @@ export default function AdminLoginPage() {
     </main>
   )
 }
+
+
