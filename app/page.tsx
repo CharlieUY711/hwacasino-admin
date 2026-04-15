@@ -17,6 +17,7 @@ export default function AdminLoginPage() {
     setError('')
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
     if (authError || !data.user) { setError('Error: ' + (authError?.message ?? 'desconocido')); setLoading(false); return }
+    console.log('user id:', data.user.id)
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
     if (!profile || !['admin', 'superadmin', 'operator', 'support'].includes(profile.role)) {
       await supabase.auth.signOut()
@@ -60,6 +61,7 @@ export default function AdminLoginPage() {
     </main>
   )
 }
+
 
 
 
