@@ -146,10 +146,17 @@ export default function AdminDashboard() {
     const balances = wallet.balances ?? { CHIPS: 0 }
     const newChips = Math.max(0, (balances.CHIPS ?? 0) + (type === 'credit' ? amount : -amount))
     await supabase.from('wallets').update({ balances: { ...balances, CHIPS: newChips } }).eq('user_id', userId)
+    const { data: walletRow } = await supabase.from('wallets').select('id').eq('user_id', userId).single()
     await supabase.from('wallet_transactions').insert({
-      user_id: userId, type, amount,
-      reason: 'admin_adjustment',
-      balance_after: newChips
+      user_id: userId,
+      wallet_id: walletRow?.id,
+      type,
+      amount,
+      currency: 'CHIPS',
+      balance_before: (balances.CHIPS ?? 0),
+      balance_after: newChips,
+      metadata: { reason: 'admin_adjustment' },
+      status: 'completed'
     })
     setMsg('✅ Balance ajustado — ' + (type === 'credit' ? '+' : '-') + amount + ' CHIPS')
     setTimeout(() => setMsg(''), 3000)
