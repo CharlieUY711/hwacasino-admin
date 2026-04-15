@@ -18,7 +18,7 @@ export default function AdminLoginPage() {
     setLoading(true)
     setError('')
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
-    if (authError || !data.user) { setError('Credenciales inválidas'); setLoading(false); return }
+    if (authError || !data.user) { setError('Error: ' + (authError?.message ?? 'desconocido')); setLoading(false); return }
     const { data: profile } = await supabase.from('profiles').select('role').eq('id', data.user.id).single()
     if (!profile || !['admin', 'superadmin', 'operator', 'support'].includes(profile.role)) {
       await supabase.auth.signOut()
@@ -62,5 +62,6 @@ export default function AdminLoginPage() {
     </main>
   )
 }
+
 
 
