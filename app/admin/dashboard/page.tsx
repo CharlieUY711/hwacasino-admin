@@ -89,7 +89,7 @@ export default function AdminDashboard() {
         break
       }
       case 'users': {
-        const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false }).limit(100)
+        const { data } = await supabase.from('profiles').select('*, wallets(balances)').order('created_at', { ascending: false }).limit(100)
         setUsers(data ?? [])
         break
       }
