@@ -81,7 +81,7 @@ export default function AdminDashboard() {
         break
       }
       case 'wallets': {
-        const { data } = await supabase.from('wallet_transactions').select('*, profiles(username)').order('created_at', { ascending: false }).limit(100)
+        const { data } = await supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }).limit(100)
         setTransactions(data ?? [])
         break
       }
@@ -411,7 +411,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {transactions.map((t) => (
                       <tr key={t.id}>
-                        <td style={{ color: GOLD }}>{t.profiles?.username ?? t.user_id?.slice(0, 8)}</td>
+                        <td style={{ color: GOLD }}>{t.user_id?.slice(0, 8)}</td>
                         <td><span className={`badge ${t.type === 'credit' ? 'badge-green' : 'badge-red'}`}>{t.type?.toUpperCase()}</span></td>
                         <td style={{ color: t.type === 'credit' ? '#4ade80' : '#f87171', fontWeight: 700 }}>{t.type === 'credit' ? '+' : '-'}{(t.amount ?? 0).toLocaleString('es-UY')}</td>
                         <td style={{ color: 'rgba(255,255,255,0.5)' }}>{(t.balance_after ?? 0).toLocaleString('es-UY')}</td>
