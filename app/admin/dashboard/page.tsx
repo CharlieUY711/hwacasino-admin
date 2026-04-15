@@ -81,7 +81,7 @@ export default function AdminDashboard() {
         break
       }
       case 'wallets': {
-        const { data } = await supabase.from('wallet_transactions').select('*').order('created_at', { ascending: false }).limit(100)
+        const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(100)
         setTransactions(data ?? [])
         break
       }
