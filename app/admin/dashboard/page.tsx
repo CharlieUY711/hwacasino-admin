@@ -32,7 +32,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<any>(null)
   const [users, setUsers] = useState<any[]>([])
   const [codes, setCodes] = useState<any[]>([])
-  const [transactions, setTransactions] = useState<any[]>([])
+  const [wallets, setWallets] = useState<any[]>([])
   const [rounds, setRounds] = useState<any[]>([])
   const [deposits, setDeposits] = useState<any[]>([])
   const [withdrawals, setWithdrawals] = useState<any[]>([])
@@ -63,10 +63,10 @@ export default function AdminDashboard() {
         const [{ count: totalUsers }, { count: totalDeposits }, { data: txData }, { data: roundData }] = await Promise.all([
           supabase.from('profiles').select('*', { count: 'exact', head: true }),
           supabase.from('deposit_requests').select('*', { count: 'exact', head: true }),
-          supabase.from('wallet_transactions').select('amount, type').limit(500),
+          supabase.from('transactions').select('amount, direction').limit(500),
           supabase.from('game_rounds').select('id').limit(500),
         ])
-        const totalVolume = (txData ?? []).filter(t => t.type === 'debit').reduce((s, t) => s + (t.amount ?? 0), 0)
+        const totalVolume = (txData ?? []).filter((t: any) => t.direction === 'debit').reduce((s: number, t: any) => s + (t.amount ?? 0), 0)
         setStats({ totalUsers, totalDeposits, totalVolume, totalRounds: roundData?.length ?? 0 })
         break
       }
@@ -81,8 +81,8 @@ export default function AdminDashboard() {
         break
       }
       case 'wallets': {
-        const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(100)
-        setTransactions(data ?? [])
+        const { data } = await supabase.from('admin_wallets_view').select('*')
+        setWallets(data ?? [])
         break
       }
       case 'games': {
@@ -144,24 +144,24 @@ export default function AdminDashboard() {
   }
 
   async function adjustBalance(userId: string, amount: number, type: string) {
-    const { data: wallet } = await supabase.from('wallets').select('balances').eq('user_id', userId).single()
+    const { data: wallet } = await supabase.from('wallets').select('id, balances').eq('user_id', userId).single()
     if (!wallet) { setMsg('Error: wallet no encontrado'); return }
     const balances = wallet.balances ?? { CHIPS: 0 }
-    const newChips = Math.max(0, (balances.CHIPS ?? 0) + (type === 'credit' ? amount : -amount))
+    const before = balances.CHIPS ?? 0
+    const newChips = Math.max(0, before + (type === 'credit' ? amount : -amount))
     await supabase.from('wallets').update({ balances: { ...balances, CHIPS: newChips } }).eq('user_id', userId)
-    const { data: walletRow } = await supabase.from('wallets').select('id').eq('user_id', userId).single()
     await supabase.from('wallet_transactions').insert({
       user_id: userId,
-      wallet_id: walletRow?.id,
+      wallet_id: wallet.id,
       type,
       amount,
       currency: 'CHIPS',
-      balance_before: (balances.CHIPS ?? 0),
+      balance_before: before,
       balance_after: newChips,
       metadata: { reason: 'admin_adjustment' },
       status: 'completed'
     })
-    setMsg('✅ Balance ajustado — ' + (type === 'credit' ? '+' : '-') + amount + ' CHIPS')
+    setMsg('✅ ' + (type === 'credit' ? '+' : '-') + amount + ' CHIPS ajustado')
     setTimeout(() => setMsg(''), 3000)
     loadSection('users')
   }
@@ -362,17 +362,16 @@ export default function AdminDashboard() {
             <div>
               <p className="section-title">Códigos VIP</p>
               <p className="section-sub">Gestión de invitaciones</p>
-
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', padding: '20px', marginBottom: '24px' }}>
                 <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '16px', textTransform: 'uppercase' }}>Crear nuevo código</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
                   <div>
                     <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>CÓDIGO</p>
                     <input className="admin-input" placeholder="VIP-XXXX-XXXX" value={newCode.code} onChange={e => setNewCode(p => ({ ...p, code: e.target.value.toUpperCase() }))} />
                   </div>
                   <div>
                     <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>LABEL</p>
-                    <input className="admin-input" placeholder="Descripción" value={newCode.label ?? ''} onChange={e => setNewCode(p => ({ ...p, label: e.target.value }))} />
+                    <input className="admin-input" placeholder="Descripción" value={newCode.label} onChange={e => setNewCode(p => ({ ...p, label: e.target.value }))} />
                   </div>
                   <div>
                     <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>MAX USOS</p>
@@ -386,16 +385,15 @@ export default function AdminDashboard() {
                     <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>VENCE</p>
                     <input className="admin-input" type="date" value={newCode.expires_at} onChange={e => setNewCode(p => ({ ...p, expires_at: e.target.value }))} />
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <input type="checkbox" id="allows_reg" checked={newCode.allows_registration ?? true} onChange={e => setNewCode(p => ({ ...p, allows_registration: e.target.checked }))} />
-                      <label htmlFor="allows_reg" style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>Permite registro</label>
-                    </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={newCode.allows_registration} onChange={e => setNewCode(p => ({ ...p, allows_registration: e.target.checked }))} />
+                      <span style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)' }}>Permite registro</span>
+                    </label>
                     <button className="admin-btn admin-btn-gold" onPointerDown={createCode} disabled={saving}>{saving ? '...' : 'CREAR'}</button>
                   </div>
                 </div>
               </div>
-
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
                 <table className="admin-table">
                   <thead><tr>
@@ -429,22 +427,28 @@ export default function AdminDashboard() {
               </div>
             </div>
           )}
+
           {section === 'wallets' && (
             <div>
-              <p className="section-title">Wallets & Transacciones</p>
-              <p className="section-sub">Movimientos de fondos</p>
+              <p className="section-title">Wallets</p>
+              <p className="section-sub">Resumen de balances por usuario</p>
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
                 <table className="admin-table">
-                  <thead><tr><th>USUARIO</th><th>TIPO</th><th>MONTO</th><th>BALANCE DESPUÉS</th><th>RAZÓN</th><th>FECHA</th></tr></thead>
+                  <thead><tr>
+                    <th>USUARIO</th><th>CHIPS</th><th>USD</th><th>USDT</th>
+                    <th>TX TOTALES</th><th>GASTADO</th><th>GANADO</th><th>ÚLTIMA TX</th>
+                  </tr></thead>
                   <tbody>
-                    {transactions.map((t) => (
-                      <tr key={t.id}>
-                        <td style={{ color: GOLD }}>{t.user_id?.slice(0, 8)}</td>
-                        <td><span className={`badge ${t.type === 'credit' ? 'badge-green' : 'badge-red'}`}>{t.type?.toUpperCase()}</span></td>
-                        <td style={{ color: t.type === 'credit' ? '#4ade80' : '#f87171', fontWeight: 700 }}>{t.type === 'credit' ? '+' : '-'}{(t.amount ?? 0).toLocaleString('es-UY')}</td>
-                        <td style={{ color: 'rgba(255,255,255,0.5)' }}>{(t.balance_after ?? 0).toLocaleString('es-UY')}</td>
-                        <td style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem' }}>{t.reason ?? '—'}</td>
-                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{t.created_at ? new Date(t.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                    {wallets.map((w) => (
+                      <tr key={w.wallet_id}>
+                        <td style={{ color: GOLD, fontWeight: 600 }}>{w.username ?? '—'}</td>
+                        <td style={{ color: GOLD, fontWeight: 700 }}>{(w.chips ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: '#4ade80' }}>{(w.usd ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: '#60a5fa' }}>{(w.usdt ?? 0).toLocaleString('es-UY')}</td>
+                        <td>{w.total_transactions ?? 0}</td>
+                        <td style={{ color: '#f87171' }}>{(w.total_spent ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: '#4ade80' }}>{(w.total_won ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{w.last_transaction ? new Date(w.last_transaction).toLocaleDateString('es-UY') : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -488,7 +492,7 @@ export default function AdminDashboard() {
                     {deposits.map((d) => (
                       <tr key={d.id}>
                         <td style={{ color: GOLD }}>{d.profiles?.username ?? d.user_id?.slice(0, 8)}</td>
-                        <td style={{ color: '#4ade80', fontWeight: 700 }}>${(d.amount ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: '#4ade80', fontWeight: 700 }}>{(d.amount ?? 0).toLocaleString('es-UY')}</td>
                         <td style={{ color: 'rgba(255,255,255,0.5)' }}>{d.method ?? 'PayPal'}</td>
                         <td><span className={`badge ${d.status === 'approved' ? 'badge-green' : d.status === 'rejected' ? 'badge-red' : 'badge-gold'}`}>{d.status?.toUpperCase() ?? 'PENDIENTE'}</span></td>
                         <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{d.created_at ? new Date(d.created_at).toLocaleDateString('es-UY') : '—'}</td>
@@ -511,7 +515,7 @@ export default function AdminDashboard() {
                     {withdrawals.map((w) => (
                       <tr key={w.id}>
                         <td style={{ color: GOLD }}>{w.profiles?.username ?? w.user_id?.slice(0, 8)}</td>
-                        <td style={{ color: '#f87171', fontWeight: 700 }}>${(w.amount ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: '#f87171', fontWeight: 700 }}>{(w.amount ?? 0).toLocaleString('es-UY')}</td>
                         <td style={{ color: 'rgba(255,255,255,0.5)' }}>{w.method ?? '—'}</td>
                         <td><span className={`badge ${w.status === 'approved' ? 'badge-green' : w.status === 'rejected' ? 'badge-red' : 'badge-gold'}`}>{w.status?.toUpperCase() ?? 'PENDIENTE'}</span></td>
                         <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{w.created_at ? new Date(w.created_at).toLocaleDateString('es-UY') : '—'}</td>
