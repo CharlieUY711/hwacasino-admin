@@ -300,7 +300,7 @@ export default function AdminDashboard() {
                 ].map((s, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                     <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>{s.label}</p>
-                    <span className={adge \}>
+                    <span className="badge badge-green">
                       {systemStatus[s.key]?.toUpperCase() ?? 'CHECKING'}
                     </span>
                   </div>
