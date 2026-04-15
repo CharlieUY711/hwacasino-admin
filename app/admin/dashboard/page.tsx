@@ -57,7 +57,7 @@ export default function AdminDashboard() {
     checkAuth()
   }, [router])
 
-  const loadSection = useCallback(async (s) => {
+  const loadSection = useCallback(async (s: string) => {
     switch (s) {
       case 'overview': {
         const [{ count: totalUsers }, { count: totalDeposits }, { data: txData }, { data: roundData }] = await Promise.all([
