@@ -1,277 +1,534 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { useWallet } from '@/hooks/useWallet'
 
 const GOLD = '#D4AF37'
 const DARK = '#0A0A0A'
+const PANEL = '#0d0d0d'
+const BORDER = 'rgba(212,175,55,0.12)'
 
-const GAMES = [
-  { id: 'roulette', label: 'ROULETTE', sub: 'THE CLASSICS', emoji: '🎡', route: '/roulette/play', status: 'live', gradient: 'linear-gradient(160deg,#1a0a00,#2d1200,#0a0a0a)' },
-  { id: 'blackjack', label: 'BLACKJACK', sub: 'PRIVATE TABLE', emoji: '🃏', route: '/lobby/blackjack', status: 'soon', gradient: 'linear-gradient(160deg,#001a0a,#002d14,#0a0a0a)' },
-  { id: 'slots', label: 'SLOTS', sub: 'HIGH VOLATILITY', emoji: '🎰', route: '/lobby/slots', status: 'soon', gradient: 'linear-gradient(160deg,#0a001a,#14002d,#0a0a0a)' },
-  { id: 'dice', label: 'DICE', sub: 'PROVABLY FAIR', emoji: '🎲', route: '/lobby/dice', status: 'soon', gradient: 'linear-gradient(160deg,#0a0800,#1a1400,#0a0a0a)' },
-  { id: 'bingo', label: 'BINGO', sub: 'LIVE SESSIONS', emoji: '🎱', route: '/lobby/bingo', status: 'soon', gradient: 'linear-gradient(160deg,#00101a,#001a2d,#0a0a0a)' },
+type Section = 'overview' | 'users' | 'codes' | 'wallets' | 'games' | 'deposits' | 'bonuses' | 'config'
+
+const NAV: { id: Section; label: string; icon: string }[] = [
+  { id: 'overview',  label: 'Overview',     icon: '◈' },
+  { id: 'users',     label: 'Usuarios',     icon: '◎' },
+  { id: 'codes',     label: 'Códigos VIP',  icon: '⬡' },
+  { id: 'wallets',   label: 'Wallets',      icon: '♦' },
+  { id: 'games',     label: 'Juegos',       icon: '♠' },
+  { id: 'deposits',  label: 'Depósitos',    icon: '▲' },
+  { id: 'bonuses',   label: 'Bonos',        icon: '♛' },
+  { id: 'config',    label: 'Config',       icon: '⚙' },
 ]
 
-type Tab = 'home' | 'games' | 'history' | 'wallet' | 'profile'
-
-export default function DashboardPage() {
+export default function AdminDashboard() {
   const router = useRouter()
-  const { balance, balances, formatChips } = useWallet()
-  const [tab, setTab] = useState<Tab>('home')
-  const [username, setUsername] = useState('MEMBER')
-  const [email, setEmail] = useState('')
-  const [userId, setUserId] = useState('')
+  const [section, setSection] = useState<Section>('overview')
+  const [authorized, setAuthorized] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [history, setHistory] = useState<any[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [stats, setStats] = useState<any>(null)
+  const [users, setUsers] = useState<any[]>([])
+  const [codes, setCodes] = useState<any[]>([])
   const [transactions, setTransactions] = useState<any[]>([])
+  const [rounds, setRounds] = useState<any[]>([])
+  const [deposits, setDeposits] = useState<any[]>([])
+  const [withdrawals, setWithdrawals] = useState<any[]>([])
+  const [bonuses, setBonuses] = useState<any[]>([])
+  const [houseConfig, setHouseConfig] = useState<any[]>([])
+  const [userSearch, setUserSearch] = useState('')
+  const [newCode, setNewCode] = useState({ code: '', max_uses: 1, bonus_chips: 0, expires_at: '' })
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
 
   useEffect(() => {
-    async function init() {
+    async function checkAuth() {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { window.location.href = 'https://www.hwacasino.com'; return }
-      setUserId(session.user.id)
-      setEmail(session.user.email ?? '')
-      const { data: profile } = await supabase.from('profiles').select('username').eq('id', session.user.id).single()
-      setUsername(profile?.username?.toUpperCase() ?? 'MEMBER')
+      if (!session) { router.replace('/'); return }
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      if (!profile || !['admin', 'superadmin', 'operator', 'support'].includes(profile.role)) {
+        router.replace('/'); return
+      }
+      setAuthorized(true)
       setLoading(false)
     }
-    init()
+    checkAuth()
   }, [router])
 
-  useEffect(() => {
-    if (!userId || tab !== 'history') return
-    supabase.from('game_rounds').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20)
-      .then(({ data }) => setHistory(data ?? []))
-  }, [userId, tab])
+  const loadSection = useCallback(async (s: Section) => {
+    switch (s) {
+      case 'overview': {
+        const [{ count: totalUsers }, { count: totalDeposits }, { data: txData }, { data: roundData }] = await Promise.all([
+          supabase.from('profiles').select('*', { count: 'exact', head: true }),
+          supabase.from('deposit_requests').select('*', { count: 'exact', head: true }),
+          supabase.from('wallet_transactions').select('amount, type').limit(500),
+          supabase.from('game_rounds').select('id').limit(500),
+        ])
+        const totalVolume = (txData ?? []).filter((t: any) => t.type === 'debit').reduce((s: number, t: any) => s + (t.amount ?? 0), 0)
+        setStats({ totalUsers, totalDeposits, totalVolume, totalRounds: roundData?.length ?? 0 })
+        break
+      }
+      case 'users': {
+        const { data } = await supabase.from('profiles').select('*, wallets(balances)').order('created_at', { ascending: false }).limit(100)
+        setUsers(data ?? [])
+        break
+      }
+      case 'codes': {
+        const { data } = await supabase.from('invites').select('*').order('created_at', { ascending: false })
+        setCodes(data ?? [])
+        break
+      }
+      case 'wallets': {
+        const { data } = await supabase.from('wallet_transactions').select('*, profiles(username)').order('created_at', { ascending: false }).limit(100)
+        setTransactions(data ?? [])
+        break
+      }
+      case 'games': {
+        const { data } = await supabase.from('game_rounds').select('*').order('created_at', { ascending: false }).limit(100)
+        setRounds(data ?? [])
+        break
+      }
+      case 'deposits': {
+        const [{ data: dep }, { data: with_ }] = await Promise.all([
+          supabase.from('deposit_requests').select('*, profiles(username)').order('created_at', { ascending: false }).limit(50),
+          supabase.from('withdraw_requests').select('*, profiles(username)').order('created_at', { ascending: false }).limit(50),
+        ])
+        setDeposits(dep ?? [])
+        setWithdrawals(with_ ?? [])
+        break
+      }
+      case 'bonuses': {
+        const { data } = await supabase.from('user_bonuses').select('*, profiles(username)').order('created_at', { ascending: false }).limit(100)
+        setBonuses(data ?? [])
+        break
+      }
+      case 'config': {
+        const { data } = await supabase.from('house_config').select('*')
+        setHouseConfig(data ?? [])
+        break
+      }
+    }
+  }, [])
 
   useEffect(() => {
-    if (!userId || tab !== 'wallet') return
-    supabase.from('wallet_transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20)
-      .then(({ data }) => setTransactions(data ?? []))
-  }, [userId, tab])
+    if (authorized) loadSection(section)
+  }, [authorized, section, loadSection])
+
+  async function createCode() {
+    if (!newCode.code.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('invites').insert({
+      code: newCode.code.trim().toUpperCase(),
+      max_uses: newCode.max_uses,
+      bonus_chips: newCode.bonus_chips,
+      used_count: 0,
+      used: false,
+      expires_at: newCode.expires_at || null,
+    })
+    setSaving(false)
+    if (error) { setMsg('Error: ' + error.message); return }
+    setMsg('✅ Código creado')
+    setNewCode({ code: '', max_uses: 1, bonus_chips: 0, expires_at: '' })
+    loadSection('codes')
+    setTimeout(() => setMsg(''), 3000)
+  }
+
+  async function updateUserRole(userId: string, role: string) {
+    await supabase.from('profiles').update({ role }).eq('id', userId)
+    loadSection('users')
+  }
+
+  async function adjustBalance(userId: string, amount: number, type: 'credit' | 'debit') {
+    const { data: wallet } = await supabase.from('wallets').select('balances').eq('user_id', userId).single()
+    if (!wallet) return
+    const balances = wallet.balances ?? { CHIPS: 0 }
+    const newChips = Math.max(0, (balances.CHIPS ?? 0) + (type === 'credit' ? amount : -amount))
+    await supabase.from('wallets').update({ balances: { ...balances, CHIPS: newChips } }).eq('user_id', userId)
+    await supabase.from('wallet_transactions').insert({ user_id: userId, type, amount, reason: 'admin_adjustment', balance_after: newChips })
+    setMsg('✅ Balance ajustado')
+    setTimeout(() => setMsg(''), 3000)
+    loadSection('users')
+  }
+
+  async function approveDeposit(id: string, userId: string, amount: number) {
+    await supabase.from('deposit_requests').update({ status: 'approved' }).eq('id', id)
+    const { data: wallet } = await supabase.from('wallets').select('balances').eq('user_id', userId).single()
+    const balances = wallet?.balances ?? { CHIPS: 0, USD: 0 }
+    await supabase.from('wallets').update({ balances: { ...balances, USD: (balances.USD ?? 0) + amount } }).eq('user_id', userId)
+    setMsg('✅ Depósito aprobado')
+    setTimeout(() => setMsg(''), 3000)
+    loadSection('deposits')
+  }
+
+  async function saveConfig(id: string, field: string, value: any) {
+    await supabase.from('house_config').update({ [field]: value }).eq('id', id)
+    setMsg('✅ Config guardada')
+    setTimeout(() => setMsg(''), 3000)
+    loadSection('config')
+  }
+
+  const filteredUsers = users.filter(u =>
+    !userSearch || u.username?.toLowerCase().includes(userSearch.toLowerCase()) || u.email?.toLowerCase().includes(userSearch.toLowerCase())
+  )
 
   if (loading) return (
-    <main style={{ minHeight: '100vh', background: DARK, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <p style={{ color: 'rgba(212,175,55,0.3)', letterSpacing: '0.5em', fontSize: '0.65rem', fontFamily: 'serif' }}>LOADING...</p>
-    </main>
+    <div style={{ minHeight: '100vh', background: DARK, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <p style={{ color: 'rgba(212,175,55,0.4)', letterSpacing: '0.5em', fontSize: '0.7rem' }}>LOADING...</p>
+    </div>
   )
+
+  if (!authorized) return null
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600;700&family=Montserrat:wght@200;300;400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;700&family=Montserrat:wght@200;300;400;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: ${DARK}; overflow-x: hidden; }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
-        .fade-up { animation: fadeUp 0.5s ease both; }
-        .game-card { transition: transform 0.25s ease; cursor: pointer; touch-action: manipulation; }
-        .game-card:active { transform: scale(0.97); }
-        .tab-btn { touch-action: manipulation; transition: color 0.2s ease; }
+        html, body { background: ${DARK}; color: #fff; font-family: 'Montserrat', sans-serif; }
+        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: #111; } ::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 2px; }
+        .admin-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+        .admin-table th { padding: 10px 12px; text-align: left; font-size: 0.55rem; letter-spacing: 0.2em; color: rgba(255,255,255,0.35); font-weight: 400; border-bottom: 1px solid ${BORDER}; white-space: nowrap; }
+        .admin-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+        .admin-table tr:hover td { background: rgba(212,175,55,0.03); }
+        .stat-card { background: ${PANEL}; border: 1px solid ${BORDER}; border-radius: 6px; padding: 20px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 0.48rem; font-weight: 700; letter-spacing: 0.1em; }
+        .badge-green { background: rgba(74,222,128,0.1); color: #4ade80; border: 1px solid rgba(74,222,128,0.2); }
+        .badge-red { background: rgba(248,113,113,0.1); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
+        .badge-gold { background: rgba(212,175,55,0.1); color: ${GOLD}; border: 1px solid rgba(212,175,55,0.2); }
+        .badge-gray { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.08); }
+        .admin-input { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 8px 12px; color: #fff; font-size: 0.72rem; font-family: 'Montserrat', sans-serif; width: 100%; outline: none; }
+        .admin-input:focus { border-color: rgba(212,175,55,0.4); }
+        .admin-btn { border: none; border-radius: 4px; padding: 8px 16px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.15em; cursor: pointer; font-family: 'Montserrat', sans-serif; touch-action: manipulation; transition: opacity 0.15s; }
+        .admin-btn:hover { opacity: 0.85; }
+        .admin-btn-gold { background: ${GOLD}; color: #000; }
+        .admin-btn-outline { background: transparent; color: ${GOLD}; border: 1px solid rgba(212,175,55,0.3); }
+        .admin-btn-red { background: rgba(220,38,38,0.8); color: #fff; }
+        .admin-btn-green { background: rgba(22,163,74,0.8); color: #fff; }
+        .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 4px; cursor: pointer; transition: all 0.15s; font-size: 0.65rem; letter-spacing: 0.05em; touch-action: manipulation; border: none; width: 100%; text-align: left; font-family: 'Montserrat', sans-serif; }
+        .nav-item:hover { background: rgba(212,175,55,0.08); }
+        .nav-item.active { background: rgba(212,175,55,0.12); color: ${GOLD}; }
+        .section-title { font-family: 'Cormorant Garamond', serif; font-size: 1.8rem; font-weight: 300; color: #fff; letter-spacing: 0.1em; margin-bottom: 4px; }
+        .section-sub { font-size: 0.5rem; letter-spacing: 0.25em; color: rgba(255,255,255,0.3); text-transform: uppercase; margin-bottom: 24px; }
       `}</style>
 
-      <main style={{ minHeight: '100dvh', background: DARK, fontFamily: "'Montserrat', sans-serif", maxWidth: '480px', margin: '0 auto', paddingBottom: '72px' }}>
-
-        <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(212,175,55,0.1)', position: 'sticky', top: 0, background: 'rgba(10,10,10,0.95)', backdropFilter: 'blur(10px)', zIndex: 90 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <img src="/logo-hwa.png" alt="HWA" style={{ width: 36, height: 36, borderRadius: '50%', border: `1.5px solid ${GOLD}`, objectFit: 'cover' }} />
-            <div>
-              <p style={{ fontSize: '0.42rem', letterSpacing: '0.25em', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>VIP MEMBER</p>
-              <p style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600, letterSpacing: '0.1em' }}>{username}</p>
-            </div>
+      <div style={{ display: 'flex', minHeight: '100vh', background: DARK }}>
+        <aside style={{ width: sidebarOpen ? 220 : 60, background: PANEL, borderRight: `1px solid ${BORDER}`, display: 'flex', flexDirection: 'column', transition: 'width 0.25s ease', overflow: 'hidden', flexShrink: 0, position: 'sticky', top: 0, height: '100vh' }}>
+          <div style={{ padding: '20px 16px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {sidebarOpen && (
+              <div>
+                <p style={{ fontSize: '0.42rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>HWA CASINO</p>
+                <p style={{ fontSize: '0.8rem', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>ADMIN</p>
+              </div>
+            )}
+            <button onPointerDown={() => setSidebarOpen(p => !p)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: '1rem', padding: '4px', touchAction: 'manipulation' }}>
+              {sidebarOpen ? '←' : '→'}
+            </button>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <p style={{ fontSize: '0.42rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', marginBottom: '2px' }}>BALANCE</p>
-            <p style={{ fontSize: '1rem', color: GOLD, fontWeight: 700 }}>{formatChips(balance)}</p>
-          </div>
-        </div>
-
-        {tab === 'home' && (
-          <div className="fade-up">
-            <div style={{ padding: '28px 20px 20px' }}>
-              <p style={{ fontSize: '0.48rem', letterSpacing: '0.4em', color: GOLD, textTransform: 'uppercase', marginBottom: '8px' }}>EXCLUSIVE ACCESS</p>
-              <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '2.8rem', color: '#fff', fontWeight: 300, lineHeight: 1, marginBottom: '20px' }}>
-                HWA <span style={{ color: GOLD, fontWeight: 700 }}>CASINO</span><br />EXPERIENCE
-              </h1>
-              <button onPointerDown={() => setTab('games')} style={{ background: GOLD, border: 'none', borderRadius: '2px', padding: '12px 24px', fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: '0.65rem', letterSpacing: '0.3em', color: '#000', cursor: 'pointer', touchAction: 'manipulation' }}>
-                ENTER GAMES
+          <nav style={{ flex: 1, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
+            {NAV.map(item => (
+              <button key={item.id} className={`nav-item${section === item.id ? ' active' : ''}`}
+                onPointerDown={() => setSection(item.id)}
+                style={{ color: section === item.id ? GOLD : 'rgba(255,255,255,0.45)', background: section === item.id ? 'rgba(212,175,55,0.12)' : 'transparent' }}>
+                <span style={{ fontSize: '1rem', flexShrink: 0 }}>{item.icon}</span>
+                {sidebarOpen && <span>{item.label}</span>}
               </button>
-            </div>
+            ))}
+          </nav>
+          <div style={{ padding: '12px 8px', borderTop: `1px solid ${BORDER}` }}>
+            <button className="nav-item" onPointerDown={() => router.push('/')} style={{ color: 'rgba(255,255,255,0.25)' }}>
+              <span style={{ fontSize: '0.9rem' }}>⌂</span>
+              {sidebarOpen && <span>Inicio</span>}
+            </button>
+            <button className="nav-item" onPointerDown={async () => { await supabase.auth.signOut(); router.replace('/') }} style={{ color: 'rgba(255,255,255,0.25)' }}>
+              <span style={{ fontSize: '0.9rem' }}>→</span>
+              {sidebarOpen && <span>Salir</span>}
+            </button>
+          </div>
+        </aside>
 
-            <div style={{ margin: '0 20px 24px', background: 'rgba(212,175,55,0.05)', border: '1px solid rgba(212,175,55,0.15)', borderRadius: '8px', padding: '16px' }}>
-              <p style={{ fontSize: '0.45rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: '12px' }}>MY WALLET</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+        <main style={{ flex: 1, padding: '32px', overflowY: 'auto', minWidth: 0 }}>
+          {msg && (
+            <div style={{ position: 'fixed', top: 20, right: 24, background: '#1a1a1a', border: `1px solid ${BORDER}`, borderRadius: '6px', padding: '10px 20px', fontSize: '0.7rem', color: GOLD, zIndex: 999 }}>
+              {msg}
+            </div>
+          )}
+
+          {section === 'overview' && (
+            <div>
+              <p className="section-title">Overview</p>
+              <p className="section-sub">Resumen general del negocio</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
                 {[
-                  { label: 'CHIPS', value: (balances?.CHIPS ?? 0).toLocaleString('es-UY') },
-                  { label: 'USD', value: `$${(balances?.USD ?? 0).toLocaleString('es-UY')}` },
-                  { label: 'USDT', value: (balances?.USDT ?? 0).toLocaleString('es-UY') },
-                ].map(b => (
-                  <div key={b.label} style={{ textAlign: 'center', padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                    <p style={{ fontSize: '0.38rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '4px' }}>{b.label}</p>
-                    <p style={{ fontSize: '0.8rem', color: GOLD, fontWeight: 700 }}>{b.value}</p>
+                  { label: 'USUARIOS TOTALES', value: stats?.totalUsers ?? '...', color: GOLD },
+                  { label: 'DEPÓSITOS', value: stats?.totalDeposits ?? '...', color: '#4ade80' },
+                  { label: 'VOLUMEN APOSTADO', value: (stats?.totalVolume ?? 0).toLocaleString('es-UY') + ' CHIPS', color: '#60a5fa' },
+                  { label: 'RONDAS JUGADAS', value: stats?.totalRounds ?? '...', color: '#f472b6' },
+                ].map((s, i) => (
+                  <div key={i} className="stat-card">
+                    <p style={{ fontSize: '0.45rem', letterSpacing: '0.25em', color: 'rgba(255,255,255,0.3)', marginBottom: '12px', textTransform: 'uppercase' }}>{s.label}</p>
+                    <p style={{ fontSize: '1.8rem', color: s.color, fontWeight: 700, fontFamily: "'Cormorant Garamond', serif" }}>{s.value}</p>
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '10px' }}>
-                <button onPointerDown={() => router.push('/deposit')} style={{ background: GOLD, border: 'none', borderRadius: '4px', padding: '10px', fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.2em', color: '#000', cursor: 'pointer', touchAction: 'manipulation' }}>DEPOSITAR</button>
-                <button onPointerDown={() => setTab('wallet')} style={{ background: 'transparent', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '4px', padding: '10px', fontSize: '0.55rem', fontWeight: 600, letterSpacing: '0.2em', color: GOLD, cursor: 'pointer', touchAction: 'manipulation' }}>HISTORIAL</button>
-              </div>
-            </div>
-
-            <div style={{ margin: '0 20px 24px' }}>
-              <p style={{ fontSize: '0.45rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: '12px' }}>BONOS ACTIVOS</p>
-              {[
-                { icon: '🎁', title: 'Bono de Bienvenida', desc: 'Chips de bienvenida acreditados', status: 'ACTIVO', color: '#4ade80' },
-                { icon: '♛', title: 'Cashback Semanal', desc: '5% de tus pérdidas de la semana', status: 'DISPONIBLE', color: GOLD },
-              ].map((b, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize: '1.4rem' }}>{b.icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: '0.65rem', fontWeight: 600, color: '#fff', marginBottom: '2px' }}>{b.title}</p>
-                    <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.35)' }}>{b.desc}</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', padding: '20px' }}>
+                <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '16px', textTransform: 'uppercase' }}>Estado del sistema</p>
+                {[
+                  { label: 'API Supabase', status: 'ONLINE' },
+                  { label: 'Ruleta Sophie', status: 'ONLINE' },
+                  { label: 'Pagos PayPal', status: 'ACTIVO' },
+                  { label: 'Bot Telegram', status: 'ACTIVO' },
+                ].map((s, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>{s.label}</p>
+                    <span className="badge badge-green">{s.status}</span>
                   </div>
-                  <span style={{ fontSize: '0.42rem', fontWeight: 700, letterSpacing: '0.15em', color: b.color }}>{b.status}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ textAlign: 'center', padding: '8px 20px 16px' }}>
-              <button onPointerDown={async () => { await supabase.auth.signOut(); window.location.href = 'https://www.hwacasino.com' }} style={{ background: 'transparent', border: 'none', fontSize: '0.45rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.15)', cursor: 'pointer', textTransform: 'uppercase', touchAction: 'manipulation' }}>CERRAR SESIÓN</button>
-            </div>
-          </div>
-        )}
-
-        {tab === 'games' && (
-          <div className="fade-up" style={{ padding: '24px 20px' }}>
-            <p style={{ fontSize: '0.45rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: '16px' }}>SELECCIONÁ TU JUEGO</p>
-            <div className="game-card" onPointerDown={() => router.push('/roulette/play')} style={{ background: GAMES[0].gradient, border: '1px solid rgba(212,175,55,0.12)', borderRadius: '6px', padding: '28px 20px', marginBottom: '12px', position: 'relative', overflow: 'hidden', minHeight: '150px' }}>
-              <div style={{ position: 'absolute', right: '-20px', top: '-20px', fontSize: '7rem', opacity: 0.06 }}>🎡</div>
-              <div style={{ position: 'absolute', top: '12px', right: '12px', background: '#16a34a', borderRadius: '20px', padding: '3px 8px', fontSize: '0.38rem', letterSpacing: '0.15em', color: '#fff', fontWeight: 700 }}>● LIVE</div>
-              <p style={{ fontSize: '0.42rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.3)', marginBottom: '6px', textTransform: 'uppercase' }}>{GAMES[0].sub}</p>
-              <h2 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '2.2rem', color: '#fff', fontWeight: 300, letterSpacing: '0.1em' }}>{GAMES[0].label}</h2>
-              <p style={{ fontSize: '0.45rem', color: 'rgba(255,255,255,0.25)', marginTop: '4px' }}>Ruleta europea · Apuestas desde 10 CHIPS</p>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              {GAMES.slice(1).map(game => (
-                <div key={game.id} className="game-card" style={{ background: game.gradient, border: '1px solid rgba(212,175,55,0.08)', borderRadius: '6px', padding: '20px 14px', position: 'relative', overflow: 'hidden', minHeight: '120px', opacity: 0.5 }}>
-                  <div style={{ position: 'absolute', right: '-8px', top: '-8px', fontSize: '4rem', opacity: 0.08 }}>{game.emoji}</div>
-                  <div style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '0.38rem', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.25)', fontWeight: 600 }}>PRONTO</div>
-                  <h3 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '1.4rem', color: '#fff', fontWeight: 400, letterSpacing: '0.05em', marginBottom: '4px' }}>{game.label}</h3>
-                  <p style={{ fontSize: '0.4rem', color: 'rgba(255,255,255,0.25)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>{game.sub}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {tab === 'history' && (
-          <div className="fade-up" style={{ padding: '24px 20px' }}>
-            <p style={{ fontSize: '0.45rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: '16px' }}>HISTORIAL DE JUGADAS</p>
-            {history.length === 0 ? (
-              <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.65rem', textAlign: 'center', marginTop: '60px' }}>Sin jugadas registradas aún.</p>
-            ) : history.map((h, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <div>
-                  <p style={{ fontSize: '0.65rem', color: '#fff', fontWeight: 600, marginBottom: '2px' }}>{h.game_type ?? 'Roulette'}</p>
-                  <p style={{ fontSize: '0.48rem', color: 'rgba(255,255,255,0.3)' }}>{new Date(h.created_at).toLocaleDateString('es-UY')}</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontSize: '0.7rem', fontWeight: 700, color: (h.payout ?? 0) > 0 ? '#4ade80' : '#f87171' }}>
-                    {(h.payout ?? 0) > 0 ? '+' : ''}{(h.payout ?? 0).toLocaleString('es-UY')}
-                  </p>
-                  <p style={{ fontSize: '0.42rem', color: 'rgba(255,255,255,0.25)' }}>CHIPS</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === 'wallet' && (
-          <div className="fade-up" style={{ padding: '24px 20px' }}>
-            <p style={{ fontSize: '0.45rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: '16px' }}>MI WALLET</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '20px' }}>
-              {[
-                { label: 'CHIPS', value: (balances?.CHIPS ?? 0).toLocaleString('es-UY') },
-                { label: 'USD', value: `$${(balances?.USD ?? 0).toLocaleString('es-UY')}` },
-                { label: 'USDT', value: (balances?.USDT ?? 0).toLocaleString('es-UY') },
-              ].map(b => (
-                <div key={b.label} style={{ textAlign: 'center', padding: '14px 8px', background: 'rgba(212,175,55,0.05)', borderRadius: '6px', border: '1px solid rgba(212,175,55,0.15)' }}>
-                  <p style={{ fontSize: '0.38rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '6px' }}>{b.label}</p>
-                  <p style={{ fontSize: '0.9rem', color: GOLD, fontWeight: 700 }}>{b.value}</p>
-                </div>
-              ))}
-            </div>
-            <button onPointerDown={() => router.push('/deposit')} style={{ width: '100%', background: GOLD, border: 'none', borderRadius: '4px', padding: '14px', fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.3em', color: '#000', cursor: 'pointer', marginBottom: '24px', touchAction: 'manipulation' }}>
-              DEPOSITAR / RETIRAR
-            </button>
-            <p style={{ fontSize: '0.45rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', marginBottom: '12px' }}>ÚLTIMAS TRANSACCIONES</p>
-            {transactions.length === 0 ? (
-              <p style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.65rem', textAlign: 'center', marginTop: '40px' }}>Sin transacciones aún.</p>
-            ) : transactions.map((t, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <div>
-                  <p style={{ fontSize: '0.62rem', color: '#fff', fontWeight: 600, marginBottom: '2px', textTransform: 'capitalize' }}>{t.type ?? 'transacción'}</p>
-                  <p style={{ fontSize: '0.46rem', color: 'rgba(255,255,255,0.3)' }}>{t.reason ?? ''} · {new Date(t.created_at).toLocaleDateString('es-UY')}</p>
-                </div>
-                <p style={{ fontSize: '0.75rem', fontWeight: 700, color: t.type === 'credit' ? '#4ade80' : '#f87171' }}>
-                  {t.type === 'credit' ? '+' : '-'}{(t.amount ?? 0).toLocaleString('es-UY')}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === 'profile' && (
-          <div className="fade-up" style={{ padding: '24px 20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '28px' }}>
-              <div style={{ width: 80, height: 80, borderRadius: '50%', border: `2px solid ${GOLD}`, overflow: 'hidden', marginBottom: '12px' }}>
-                <img src="/logo-hwa.png" alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.6 }} />
-              </div>
-              <p style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '1.6rem', color: '#fff', fontWeight: 300, letterSpacing: '0.2em' }}>{username}</p>
-              <p style={{ fontSize: '0.48rem', color: 'rgba(255,255,255,0.3)', marginTop: '4px' }}>{email}</p>
-              <div style={{ marginTop: '8px', background: 'rgba(212,175,55,0.1)', borderRadius: '20px', padding: '4px 12px', border: '1px solid rgba(212,175,55,0.3)' }}>
-                <span style={{ fontSize: '0.42rem', letterSpacing: '0.2em', color: GOLD, fontWeight: 700 }}>VIP MEMBER</span>
+                ))}
               </div>
             </div>
-            {[
-              { label: 'Usuario', value: username },
-              { label: 'Email', value: email },
-              { label: 'Miembro desde', value: 'Abril 2026' },
-              { label: 'Nivel', value: 'VIP' },
-            ].map((f, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                <p style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em' }}>{f.label}</p>
-                <p style={{ fontSize: '0.62rem', color: '#fff', fontWeight: 500 }}>{f.value}</p>
+          )}
+
+          {section === 'users' && (
+            <div>
+              <p className="section-title">Usuarios</p>
+              <p className="section-sub">Gestión de miembros y roles</p>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                <input className="admin-input" placeholder="Buscar por username o email..." value={userSearch} onChange={e => setUserSearch(e.target.value)} style={{ maxWidth: 320 }} />
+                <button className="admin-btn admin-btn-outline" onPointerDown={() => loadSection('users')}>↻ Refrescar</button>
               </div>
-            ))}
-            <button onPointerDown={async () => { await supabase.auth.signOut(); window.location.href = 'https://www.hwacasino.com' }} style={{ width: '100%', marginTop: '32px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', padding: '12px', fontSize: '0.55rem', letterSpacing: '0.3em', color: 'rgba(255,255,255,0.25)', cursor: 'pointer', touchAction: 'manipulation' }}>
-              CERRAR SESIÓN
-            </button>
-          </div>
-        )}
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>USERNAME</th><th>EMAIL</th><th>ROL</th><th>CHIPS</th><th>REGISTRO</th><th>ACCIONES</th></tr></thead>
+                  <tbody>
+                    {filteredUsers.map((u: any) => (
+                      <tr key={u.id}>
+                        <td style={{ color: GOLD, fontWeight: 600 }}>{u.username ?? '—'}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.65rem' }}>{u.email}</td>
+                        <td>
+                          <select value={u.role ?? 'user'} onChange={e => updateUserRole(u.id, e.target.value)}
+                            style={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: '4px', padding: '4px 8px', fontSize: '0.6rem', cursor: 'pointer' }}>
+                            {['user', 'vip', 'support', 'operator', 'admin', 'superadmin'].map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ color: GOLD }}>{((u.wallets as any)?.[0]?.balances?.CHIPS ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                              onPointerDown={() => { const amt = parseInt(prompt('Chips a acreditar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'credit') }}>+ Chips</button>
+                            <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                              onPointerDown={() => { const amt = parseInt(prompt('Chips a debitar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'debit') }}>- Chips</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-        <nav style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: '480px', background: '#0d0d0d', borderTop: '1px solid rgba(212,175,55,0.12)', display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', zIndex: 100 }}>
-          {([
-            { id: 'home',    icon: '⌂', label: 'INICIO' },
-            { id: 'games',   icon: '♠', label: 'JUEGOS' },
-            { id: 'history', icon: '◷', label: 'HISTORIAL' },
-            { id: 'wallet',  icon: '◈', label: 'WALLET' },
-            { id: 'profile', icon: '◎', label: 'PERFIL' },
-          ] as { id: Tab; icon: string; label: string }[]).map(item => (
-            <button key={item.id} className="tab-btn" onPointerDown={() => setTab(item.id)}
-              style={{ background: 'transparent', border: 'none', color: tab === item.id ? GOLD : 'rgba(255,255,255,0.25)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '10px 0', cursor: 'pointer', fontFamily: "'Montserrat', sans-serif" }}>
-              <span style={{ fontSize: '1rem' }}>{item.icon}</span>
-              <span style={{ fontSize: '0.36rem', letterSpacing: '0.1em', fontWeight: tab === item.id ? 700 : 300 }}>{item.label}</span>
-            </button>
-          ))}
-        </nav>
+          {section === 'codes' && (
+            <div>
+              <p className="section-title">Códigos VIP</p>
+              <p className="section-sub">Gestión de invitaciones</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', padding: '20px', marginBottom: '24px' }}>
+                <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '16px', textTransform: 'uppercase' }}>Crear nuevo código</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
+                  <div>
+                    <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>CÓDIGO</p>
+                    <input className="admin-input" placeholder="VIP-XXXX-XXXX" value={newCode.code} onChange={e => setNewCode(p => ({ ...p, code: e.target.value.toUpperCase() }))} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>MAX USOS</p>
+                    <input className="admin-input" type="number" min="1" value={newCode.max_uses} onChange={e => setNewCode(p => ({ ...p, max_uses: parseInt(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>CHIPS BONO</p>
+                    <input className="admin-input" type="number" min="0" value={newCode.bonus_chips} onChange={e => setNewCode(p => ({ ...p, bonus_chips: parseInt(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>VENCE</p>
+                    <input className="admin-input" type="date" value={newCode.expires_at} onChange={e => setNewCode(p => ({ ...p, expires_at: e.target.value }))} />
+                  </div>
+                  <button className="admin-btn admin-btn-gold" onPointerDown={createCode} disabled={saving}>{saving ? '...' : 'CREAR'}</button>
+                </div>
+              </div>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>CÓDIGO</th><th>USOS</th><th>MAX</th><th>CHIPS</th><th>VENCE</th><th>ESTADO</th></tr></thead>
+                  <tbody>
+                    {codes.map((c: any) => (
+                      <tr key={c.id}>
+                        <td style={{ color: GOLD, fontWeight: 700, fontFamily: 'monospace', fontSize: '0.8rem' }}>{c.code}</td>
+                        <td>{c.used_count ?? 0}</td>
+                        <td>{c.max_uses ?? 1}</td>
+                        <td style={{ color: '#4ade80' }}>{(c.bonus_chips ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{c.expires_at ? new Date(c.expires_at).toLocaleDateString('es-UY') : 'Sin vencimiento'}</td>
+                        <td><span className={`badge ${(c.used_count ?? 0) >= (c.max_uses ?? 1) ? 'badge-red' : 'badge-green'}`}>{(c.used_count ?? 0) >= (c.max_uses ?? 1) ? 'AGOTADO' : 'ACTIVO'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-      </main>
+          {section === 'wallets' && (
+            <div>
+              <p className="section-title">Wallets & Transacciones</p>
+              <p className="section-sub">Movimientos de fondos</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>USUARIO</th><th>TIPO</th><th>MONTO</th><th>BALANCE DESPUÉS</th><th>RAZÓN</th><th>FECHA</th></tr></thead>
+                  <tbody>
+                    {transactions.map((t: any) => (
+                      <tr key={t.id}>
+                        <td style={{ color: GOLD }}>{(t.profiles as any)?.username ?? t.user_id?.slice(0, 8)}</td>
+                        <td><span className={`badge ${t.type === 'credit' ? 'badge-green' : 'badge-red'}`}>{t.type?.toUpperCase()}</span></td>
+                        <td style={{ color: t.type === 'credit' ? '#4ade80' : '#f87171', fontWeight: 700 }}>{t.type === 'credit' ? '+' : '-'}{(t.amount ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.5)' }}>{(t.balance_after ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem' }}>{t.reason ?? '—'}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{t.created_at ? new Date(t.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {section === 'games' && (
+            <div>
+              <p className="section-title">Juegos & Rondas</p>
+              <p className="section-sub">Historial de actividad en mesa</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>RONDA</th><th>SALA</th><th>ESTADO</th><th>NÚMERO</th><th>FECHA</th></tr></thead>
+                  <tbody>
+                    {rounds.map((r: any) => (
+                      <tr key={r.id}>
+                        <td style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', fontFamily: 'monospace' }}>{r.id?.slice(0, 8)}...</td>
+                        <td style={{ color: GOLD }}>{r.room_id ?? '—'}</td>
+                        <td><span className={`badge ${r.status === 'spinning' ? 'badge-gold' : r.status === 'closed' ? 'badge-gray' : 'badge-green'}`}>{r.status?.toUpperCase() ?? '—'}</span></td>
+                        <td style={{ fontSize: '1.1rem', fontWeight: 700 }}>{r.winning_number ?? '—'}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{r.created_at ? new Date(r.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {section === 'deposits' && (
+            <div>
+              <p className="section-title">Depósitos & Retiros</p>
+              <p className="section-sub">Gestión de movimientos de dinero real</p>
+              <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '12px', textTransform: 'uppercase' }}>Depósitos</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto', marginBottom: '28px' }}>
+                <table className="admin-table">
+                  <thead><tr><th>USUARIO</th><th>MONTO</th><th>MÉTODO</th><th>ESTADO</th><th>FECHA</th><th>ACCIÓN</th></tr></thead>
+                  <tbody>
+                    {deposits.map((d: any) => (
+                      <tr key={d.id}>
+                        <td style={{ color: GOLD }}>{(d.profiles as any)?.username ?? d.user_id?.slice(0, 8)}</td>
+                        <td style={{ color: '#4ade80', fontWeight: 700 }}>${(d.amount ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.5)' }}>{d.method ?? 'PayPal'}</td>
+                        <td><span className={`badge ${d.status === 'approved' ? 'badge-green' : d.status === 'rejected' ? 'badge-red' : 'badge-gold'}`}>{d.status?.toUpperCase() ?? 'PENDIENTE'}</span></td>
+                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{d.created_at ? new Date(d.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                        <td>{d.status === 'pending' && (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={() => approveDeposit(d.id, d.user_id, d.amount)}>✓</button>
+                            <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={async () => { await supabase.from('deposit_requests').update({ status: 'rejected' }).eq('id', d.id); loadSection('deposits') }}>✗</button>
+                          </div>
+                        )}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '12px', textTransform: 'uppercase' }}>Retiros</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>USUARIO</th><th>MONTO</th><th>MÉTODO</th><th>ESTADO</th><th>FECHA</th><th>ACCIÓN</th></tr></thead>
+                  <tbody>
+                    {withdrawals.map((w: any) => (
+                      <tr key={w.id}>
+                        <td style={{ color: GOLD }}>{(w.profiles as any)?.username ?? w.user_id?.slice(0, 8)}</td>
+                        <td style={{ color: '#f87171', fontWeight: 700 }}>${(w.amount ?? 0).toLocaleString('es-UY')}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.5)' }}>{w.method ?? '—'}</td>
+                        <td><span className={`badge ${w.status === 'approved' ? 'badge-green' : w.status === 'rejected' ? 'badge-red' : 'badge-gold'}`}>{w.status?.toUpperCase() ?? 'PENDIENTE'}</span></td>
+                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{w.created_at ? new Date(w.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                        <td>{w.status === 'pending' && (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={async () => { await supabase.from('withdraw_requests').update({ status: 'approved' }).eq('id', w.id); loadSection('deposits') }}>✓</button>
+                            <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={async () => { await supabase.from('withdraw_requests').update({ status: 'rejected' }).eq('id', w.id); loadSection('deposits') }}>✗</button>
+                          </div>
+                        )}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {section === 'bonuses' && (
+            <div>
+              <p className="section-title">Bonos & Promociones</p>
+              <p className="section-sub">Gestión de incentivos</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>USUARIO</th><th>TIPO</th><th>MONTO</th><th>ESTADO</th><th>VENCE</th><th>FECHA</th></tr></thead>
+                  <tbody>
+                    {bonuses.map((b: any) => (
+                      <tr key={b.id}>
+                        <td style={{ color: GOLD }}>{(b.profiles as any)?.username ?? b.user_id?.slice(0, 8)}</td>
+                        <td><span className="badge badge-gold">{b.bonus_type?.toUpperCase() ?? 'BONO'}</span></td>
+                        <td style={{ color: '#4ade80', fontWeight: 700 }}>{(b.amount ?? 0).toLocaleString('es-UY')} CHIPS</td>
+                        <td><span className={`badge ${b.status === 'active' ? 'badge-green' : b.status === 'used' ? 'badge-gray' : 'badge-red'}`}>{b.status?.toUpperCase() ?? '—'}</span></td>
+                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{b.expires_at ? new Date(b.expires_at).toLocaleDateString('es-UY') : 'Sin vencimiento'}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{b.created_at ? new Date(b.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {section === 'config' && (
+            <div>
+              <p className="section-title">Configuración</p>
+              <p className="section-sub">Parámetros del casino</p>
+              <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
+                <table className="admin-table">
+                  <thead><tr><th>JUEGO</th><th>RTP %</th><th>EDGE %</th><th>ACTIVO</th><th>ACCIÓN</th></tr></thead>
+                  <tbody>
+                    {houseConfig.map((c: any) => (
+                      <tr key={c.id}>
+                        <td style={{ color: GOLD, fontWeight: 600 }}>{c.game_type?.toUpperCase() ?? '—'}</td>
+                        <td><input className="admin-input" type="number" defaultValue={c.rtp_pct} style={{ width: 80 }} onBlur={e => saveConfig(c.id, 'rtp_pct', parseFloat(e.target.value))} /></td>
+                        <td><input className="admin-input" type="number" defaultValue={c.edge_pct} style={{ width: 80 }} onBlur={e => saveConfig(c.id, 'edge_pct', parseFloat(e.target.value))} /></td>
+                        <td>
+                          <button className={`admin-btn ${c.is_active ? 'admin-btn-green' : 'admin-btn-red'}`} style={{ padding: '4px 12px', fontSize: '0.52rem' }}
+                            onPointerDown={() => saveConfig(c.id, 'is_active', !c.is_active)}>
+                            {c.is_active ? 'ACTIVO' : 'INACTIVO'}
+                          </button>
+                        </td>
+                        <td><button className="admin-btn admin-btn-outline" style={{ padding: '4px 12px', fontSize: '0.52rem' }} onPointerDown={() => loadSection('config')}>↻</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+        </main>
+      </div>
     </>
   )
 }
-
