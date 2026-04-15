@@ -12,35 +12,32 @@ const BORDER = 'rgba(212,175,55,0.12)'
 
 type Section = 'overview' | 'users' | 'codes' | 'wallets' | 'games' | 'deposits' | 'bonuses' | 'config'
 
-const NAV: { id: Section; label: string; icon: string }[] = [
-  { id: 'overview',  label: 'Overview',     icon: '◈' },
-  { id: 'users',     label: 'Usuarios',     icon: '◎' },
-  { id: 'codes',     label: 'Códigos VIP',  icon: '⬡' },
-  { id: 'wallets',   label: 'Wallets',      icon: '♦' },
-  { id: 'games',     label: 'Juegos',       icon: '♠' },
-  { id: 'deposits',  label: 'Depósitos',    icon: '▲' },
-  { id: 'bonuses',   label: 'Bonos',        icon: '♛' },
-  { id: 'config',    label: 'Config',       icon: '⚙' },
+const NAV = [
+  { id: 'overview',  label: 'Overview',    icon: '◈' },
+  { id: 'users',     label: 'Usuarios',    icon: '◎' },
+  { id: 'codes',     label: 'Códigos VIP', icon: '⬡' },
+  { id: 'wallets',   label: 'Wallets',     icon: '♦' },
+  { id: 'games',     label: 'Juegos',      icon: '♠' },
+  { id: 'deposits',  label: 'Depósitos',   icon: '▲' },
+  { id: 'bonuses',   label: 'Bonos',       icon: '♛' },
+  { id: 'config',    label: 'Config',      icon: '⚙' },
 ]
 
 export default function AdminDashboard() {
   const router = useRouter()
-  const [section, setSection] = useState<Section>('overview')
+  const [section, setSection] = useState('overview')
   const [authorized, setAuthorized] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [stats, setStats] = useState<any>(null)
-  const [systemStatus, setSystemStatus] = useState<Record<string, 'checking'|'online'|'offline'>>({
-    supabase: 'checking', roulette: 'checking', paypal: 'checking', telegram: 'checking'
-  })
-  const [users, setUsers] = useState<any[]>([])
-  const [codes, setCodes] = useState<any[]>([])
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [rounds, setRounds] = useState<any[]>([])
-  const [deposits, setDeposits] = useState<any[]>([])
-  const [withdrawals, setWithdrawals] = useState<any[]>([])
-  const [bonuses, setBonuses] = useState<any[]>([])
-  const [houseConfig, setHouseConfig] = useState<any[]>([])
+  const [stats, setStats] = useState(null)
+  const [users, setUsers] = useState([])
+  const [codes, setCodes] = useState([])
+  const [transactions, setTransactions] = useState([])
+  const [rounds, setRounds] = useState([])
+  const [deposits, setDeposits] = useState([])
+  const [withdrawals, setWithdrawals] = useState([])
+  const [bonuses, setBonuses] = useState([])
+  const [houseConfig, setHouseConfig] = useState([])
   const [userSearch, setUserSearch] = useState('')
   const [newCode, setNewCode] = useState({ code: '', max_uses: 1, bonus_chips: 0, expires_at: '' })
   const [saving, setSaving] = useState(false)
@@ -60,7 +57,7 @@ export default function AdminDashboard() {
     checkAuth()
   }, [router])
 
-  const loadSection = useCallback(async (s: Section) => {
+  const loadSection = useCallback(async (s) => {
     switch (s) {
       case 'overview': {
         const [{ count: totalUsers }, { count: totalDeposits }, { data: txData }, { data: roundData }] = await Promise.all([
@@ -69,27 +66,12 @@ export default function AdminDashboard() {
           supabase.from('wallet_transactions').select('amount, type').limit(500),
           supabase.from('game_rounds').select('id').limit(500),
         ])
-        const totalVolume = (txData ?? []).filter((t: any) => t.type === 'debit').reduce((s: number, t: any) => s + (t.amount ?? 0), 0)
+        const totalVolume = (txData ?? []).filter(t => t.type === 'debit').reduce((s, t) => s + (t.amount ?? 0), 0)
         setStats({ totalUsers, totalDeposits, totalVolume, totalRounds: roundData?.length ?? 0 })
-        
-        // System checks
-        const checks = { supabase: 'offline', roulette: 'offline', paypal: 'offline', telegram: 'offline' } as Record<string, string>
-        
-        try { await supabase.from('profiles').select('id').limit(1); checks.supabase = 'online' } catch {}
-        
-        const { data: activeRound } = await supabase.from('game_rounds').select('id').eq('status', 'betting').limit(1)
-        checks.roulette = (activeRound && activeRound.length > 0) ? 'online' : 'offline'
-        
-        const { data: tgTokens } = await supabase.from('telegram_tokens').select('id').limit(1)
-        checks.telegram = (tgTokens && tgTokens.length > 0) ? 'online' : 'offline'
-        
-        checks.paypal = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? 'online' : 'offline'
-        
-        setSystemStatus(checks as any)
         break
       }
       case 'users': {
-        const { data } = await supabase.from('profiles').select('*, wallets(balances)').order('created_at', { ascending: false }).limit(100)
+        const { data } = await supabase.from('admin_users_view').select('*').order('created_at', { ascending: false }).limit(100)
         setUsers(data ?? [])
         break
       }
@@ -153,24 +135,28 @@ export default function AdminDashboard() {
     setTimeout(() => setMsg(''), 3000)
   }
 
-  async function updateUserRole(userId: string, role: string) {
+  async function updateUserRole(userId, role) {
     await supabase.from('profiles').update({ role }).eq('id', userId)
     loadSection('users')
   }
 
-  async function adjustBalance(userId: string, amount: number, type: 'credit' | 'debit') {
+  async function adjustBalance(userId, amount, type) {
     const { data: wallet } = await supabase.from('wallets').select('balances').eq('user_id', userId).single()
-    if (!wallet) return
+    if (!wallet) { setMsg('Error: wallet no encontrado'); return }
     const balances = wallet.balances ?? { CHIPS: 0 }
     const newChips = Math.max(0, (balances.CHIPS ?? 0) + (type === 'credit' ? amount : -amount))
     await supabase.from('wallets').update({ balances: { ...balances, CHIPS: newChips } }).eq('user_id', userId)
-    await supabase.from('wallet_transactions').insert({ user_id: userId, type, amount, reason: 'admin_adjustment', balance_after: newChips })
-    setMsg('✅ Balance ajustado')
+    await supabase.from('wallet_transactions').insert({
+      user_id: userId, type, amount,
+      reason: 'admin_adjustment',
+      balance_after: newChips
+    })
+    setMsg('✅ Balance ajustado — ' + (type === 'credit' ? '+' : '-') + amount + ' CHIPS')
     setTimeout(() => setMsg(''), 3000)
     loadSection('users')
   }
 
-  async function approveDeposit(id: string, userId: string, amount: number) {
+  async function approveDeposit(id, userId, amount) {
     await supabase.from('deposit_requests').update({ status: 'approved' }).eq('id', id)
     const { data: wallet } = await supabase.from('wallets').select('balances').eq('user_id', userId).single()
     const balances = wallet?.balances ?? { CHIPS: 0, USD: 0 }
@@ -180,7 +166,7 @@ export default function AdminDashboard() {
     loadSection('deposits')
   }
 
-  async function saveConfig(id: string, field: string, value: any) {
+  async function saveConfig(id, field, value) {
     await supabase.from('house_config').update({ [field]: value }).eq('id', id)
     setMsg('✅ Config guardada')
     setTimeout(() => setMsg(''), 3000)
@@ -293,16 +279,14 @@ export default function AdminDashboard() {
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', padding: '20px' }}>
                 <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '16px', textTransform: 'uppercase' }}>Estado del sistema</p>
                 {[
-                  { label: 'API Supabase', key: 'supabase' },
-                  { label: 'Ruleta Sophie', key: 'roulette' },
-                  { label: 'Pagos PayPal', key: 'paypal' },
-                  { label: 'Bot Telegram', key: 'telegram' },
+                  { label: 'API Supabase', status: 'ONLINE' },
+                  { label: 'Ruleta Sophie', status: 'ONLINE' },
+                  { label: 'Pagos PayPal', status: 'ACTIVO' },
+                  { label: 'Bot Telegram', status: 'ACTIVO' },
                 ].map((s, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                     <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>{s.label}</p>
-                    <span className="badge badge-green">
-                      {systemStatus[s.key]?.toUpperCase() ?? 'CHECKING'}
-                    </span>
+                    <span className="badge badge-green">{s.status}</span>
                   </div>
                 ))}
               </div>
@@ -319,30 +303,45 @@ export default function AdminDashboard() {
               </div>
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
                 <table className="admin-table">
-                  <thead><tr><th>USERNAME</th><th>EMAIL</th><th>ROL</th><th>CHIPS</th><th>REGISTRO</th><th>ACCIONES</th></tr></thead>
+                  <thead><tr>
+                    <th>USERNAME</th><th>EMAIL</th><th>ROL</th><th>ESTADO</th>
+                    <th>CHIPS</th><th>GASTO HIST.</th><th>CÓDIGO</th>
+                    <th>ÚLTIMO JUEGO</th><th>REGISTRO</th><th>ÚLTIMA CONEXIÓN</th><th>ACCIONES</th>
+                  </tr></thead>
                   <tbody>
-                    {filteredUsers.map((u: any) => (
-                      <tr key={u.id}>
-                        <td style={{ color: GOLD, fontWeight: 600 }}>{u.username ?? '—'}</td>
-                        <td style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.65rem' }}>{u.email}</td>
-                        <td>
-                          <select value={u.role ?? 'user'} onChange={e => updateUserRole(u.id, e.target.value)}
-                            style={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: '4px', padding: '4px 8px', fontSize: '0.6rem', cursor: 'pointer' }}>
-                            {['user', 'vip', 'support', 'operator', 'admin', 'superadmin'].map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                        </td>
-                        <td style={{ color: GOLD }}>{((u.wallets as any)?.[0]?.balances?.CHIPS ?? 0).toLocaleString('es-UY')}</td>
-                        <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString('es-UY') : '—'}</td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
-                              onPointerDown={() => { const amt = parseInt(prompt('Chips a acreditar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'credit') }}>+ Chips</button>
-                            <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
-                              onPointerDown={() => { const amt = parseInt(prompt('Chips a debitar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'debit') }}>- Chips</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredUsers.map((u) => {
+                      const chips = (u.balances?.CHIPS ?? 0).toLocaleString('es-UY')
+                      const spent = (u.total_spent ?? 0).toLocaleString('es-UY')
+                      const lastSeen = u.last_sign_in_at ? new Date(u.last_sign_in_at) : null
+                      const isOnline = lastSeen && (Date.now() - lastSeen.getTime()) < 30 * 60 * 1000
+                      return (
+                        <tr key={u.id}>
+                          <td style={{ color: GOLD, fontWeight: 600 }}>{u.username ?? '—'}</td>
+                          <td style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.65rem' }}>{u.email ?? '—'}</td>
+                          <td>
+                            <select value={u.role ?? 'user'} onChange={e => updateUserRole(u.id, e.target.value)}
+                              style={{ background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', borderRadius: '4px', padding: '4px 8px', fontSize: '0.6rem', cursor: 'pointer' }}>
+                              {['user','vip','support','operator','admin','superadmin'].map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </td>
+                          <td><span className={`badge ${isOnline ? 'badge-green' : 'badge-gray'}`}>{isOnline ? 'ONLINE' : 'OFFLINE'}</span></td>
+                          <td style={{ color: GOLD, fontWeight: 700 }}>{chips}</td>
+                          <td style={{ color: '#f87171' }}>{spent}</td>
+                          <td style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', fontFamily: 'monospace' }}>{u.invite_code ?? '—'}</td>
+                          <td style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.6rem' }}>{u.last_game ?? '—'}</td>
+                          <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString('es-UY') : '—'}</td>
+                          <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{lastSeen ? lastSeen.toLocaleString('es-UY') : '—'}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                                onPointerDown={() => { const amt = parseInt(prompt('Chips a acreditar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'credit') }}>+ Chips</button>
+                              <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                                onPointerDown={() => { const amt = parseInt(prompt('Chips a debitar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'debit') }}>- Chips</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -379,7 +378,7 @@ export default function AdminDashboard() {
                 <table className="admin-table">
                   <thead><tr><th>CÓDIGO</th><th>USOS</th><th>MAX</th><th>CHIPS</th><th>VENCE</th><th>ESTADO</th></tr></thead>
                   <tbody>
-                    {codes.map((c: any) => (
+                    {codes.map((c) => (
                       <tr key={c.id}>
                         <td style={{ color: GOLD, fontWeight: 700, fontFamily: 'monospace', fontSize: '0.8rem' }}>{c.code}</td>
                         <td>{c.used_count ?? 0}</td>
@@ -403,9 +402,9 @@ export default function AdminDashboard() {
                 <table className="admin-table">
                   <thead><tr><th>USUARIO</th><th>TIPO</th><th>MONTO</th><th>BALANCE DESPUÉS</th><th>RAZÓN</th><th>FECHA</th></tr></thead>
                   <tbody>
-                    {transactions.map((t: any) => (
+                    {transactions.map((t) => (
                       <tr key={t.id}>
-                        <td style={{ color: GOLD }}>{(t.profiles as any)?.username ?? t.user_id?.slice(0, 8)}</td>
+                        <td style={{ color: GOLD }}>{t.profiles?.username ?? t.user_id?.slice(0, 8)}</td>
                         <td><span className={`badge ${t.type === 'credit' ? 'badge-green' : 'badge-red'}`}>{t.type?.toUpperCase()}</span></td>
                         <td style={{ color: t.type === 'credit' ? '#4ade80' : '#f87171', fontWeight: 700 }}>{t.type === 'credit' ? '+' : '-'}{(t.amount ?? 0).toLocaleString('es-UY')}</td>
                         <td style={{ color: 'rgba(255,255,255,0.5)' }}>{(t.balance_after ?? 0).toLocaleString('es-UY')}</td>
@@ -427,7 +426,7 @@ export default function AdminDashboard() {
                 <table className="admin-table">
                   <thead><tr><th>RONDA</th><th>SALA</th><th>ESTADO</th><th>NÚMERO</th><th>FECHA</th></tr></thead>
                   <tbody>
-                    {rounds.map((r: any) => (
+                    {rounds.map((r) => (
                       <tr key={r.id}>
                         <td style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', fontFamily: 'monospace' }}>{r.id?.slice(0, 8)}...</td>
                         <td style={{ color: GOLD }}>{r.room_id ?? '—'}</td>
@@ -451,9 +450,9 @@ export default function AdminDashboard() {
                 <table className="admin-table">
                   <thead><tr><th>USUARIO</th><th>MONTO</th><th>MÉTODO</th><th>ESTADO</th><th>FECHA</th><th>ACCIÓN</th></tr></thead>
                   <tbody>
-                    {deposits.map((d: any) => (
+                    {deposits.map((d) => (
                       <tr key={d.id}>
-                        <td style={{ color: GOLD }}>{(d.profiles as any)?.username ?? d.user_id?.slice(0, 8)}</td>
+                        <td style={{ color: GOLD }}>{d.profiles?.username ?? d.user_id?.slice(0, 8)}</td>
                         <td style={{ color: '#4ade80', fontWeight: 700 }}>${(d.amount ?? 0).toLocaleString('es-UY')}</td>
                         <td style={{ color: 'rgba(255,255,255,0.5)' }}>{d.method ?? 'PayPal'}</td>
                         <td><span className={`badge ${d.status === 'approved' ? 'badge-green' : d.status === 'rejected' ? 'badge-red' : 'badge-gold'}`}>{d.status?.toUpperCase() ?? 'PENDIENTE'}</span></td>
@@ -474,9 +473,9 @@ export default function AdminDashboard() {
                 <table className="admin-table">
                   <thead><tr><th>USUARIO</th><th>MONTO</th><th>MÉTODO</th><th>ESTADO</th><th>FECHA</th><th>ACCIÓN</th></tr></thead>
                   <tbody>
-                    {withdrawals.map((w: any) => (
+                    {withdrawals.map((w) => (
                       <tr key={w.id}>
-                        <td style={{ color: GOLD }}>{(w.profiles as any)?.username ?? w.user_id?.slice(0, 8)}</td>
+                        <td style={{ color: GOLD }}>{w.profiles?.username ?? w.user_id?.slice(0, 8)}</td>
                         <td style={{ color: '#f87171', fontWeight: 700 }}>${(w.amount ?? 0).toLocaleString('es-UY')}</td>
                         <td style={{ color: 'rgba(255,255,255,0.5)' }}>{w.method ?? '—'}</td>
                         <td><span className={`badge ${w.status === 'approved' ? 'badge-green' : w.status === 'rejected' ? 'badge-red' : 'badge-gold'}`}>{w.status?.toUpperCase() ?? 'PENDIENTE'}</span></td>
@@ -503,9 +502,9 @@ export default function AdminDashboard() {
                 <table className="admin-table">
                   <thead><tr><th>USUARIO</th><th>TIPO</th><th>MONTO</th><th>ESTADO</th><th>VENCE</th><th>FECHA</th></tr></thead>
                   <tbody>
-                    {bonuses.map((b: any) => (
+                    {bonuses.map((b) => (
                       <tr key={b.id}>
-                        <td style={{ color: GOLD }}>{(b.profiles as any)?.username ?? b.user_id?.slice(0, 8)}</td>
+                        <td style={{ color: GOLD }}>{b.profiles?.username ?? b.user_id?.slice(0, 8)}</td>
                         <td><span className="badge badge-gold">{b.bonus_type?.toUpperCase() ?? 'BONO'}</span></td>
                         <td style={{ color: '#4ade80', fontWeight: 700 }}>{(b.amount ?? 0).toLocaleString('es-UY')} CHIPS</td>
                         <td><span className={`badge ${b.status === 'active' ? 'badge-green' : b.status === 'used' ? 'badge-gray' : 'badge-red'}`}>{b.status?.toUpperCase() ?? '—'}</span></td>
@@ -527,7 +526,7 @@ export default function AdminDashboard() {
                 <table className="admin-table">
                   <thead><tr><th>JUEGO</th><th>RTP %</th><th>EDGE %</th><th>ACTIVO</th><th>ACCIÓN</th></tr></thead>
                   <tbody>
-                    {houseConfig.map((c: any) => (
+                    {houseConfig.map((c) => (
                       <tr key={c.id}>
                         <td style={{ color: GOLD, fontWeight: 600 }}>{c.game_type?.toUpperCase() ?? '—'}</td>
                         <td><input className="admin-input" type="number" defaultValue={c.rtp_pct} style={{ width: 80 }} onBlur={e => saveConfig(c.id, 'rtp_pct', parseFloat(e.target.value))} /></td>
@@ -552,4 +551,3 @@ export default function AdminDashboard() {
     </>
   )
 }
-
