@@ -39,7 +39,7 @@ export default function AdminDashboard() {
   const [bonuses, setBonuses] = useState<any[]>([])
   const [houseConfig, setHouseConfig] = useState<any[]>([])
   const [userSearch, setUserSearch] = useState('')
-  const [newCode, setNewCode] = useState({ code: '', max_uses: 1, bonus_chips: 0, expires_at: '' })
+  const [newCode, setNewCode] = useState({ code: '', label: '', max_uses: 1, bonus_chips: 0, expires_at: '', allows_registration: true })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
@@ -121,16 +121,19 @@ export default function AdminDashboard() {
     setSaving(true)
     const { error } = await supabase.from('invites').insert({
       code: newCode.code.trim().toUpperCase(),
+      label: newCode.label || null,
       max_uses: newCode.max_uses,
       bonus_chips: newCode.bonus_chips,
       used_count: 0,
       used: false,
+      is_active: true,
+      allows_registration: newCode.allows_registration,
       expires_at: newCode.expires_at || null,
     })
     setSaving(false)
     if (error) { setMsg('Error: ' + error.message); return }
     setMsg('✅ Código creado')
-    setNewCode({ code: '', max_uses: 1, bonus_chips: 0, expires_at: '' })
+    setNewCode({ code: '', label: '', max_uses: 1, bonus_chips: 0, expires_at: '', allows_registration: true })
     loadSection('codes')
     setTimeout(() => setMsg(''), 3000)
   }
@@ -359,12 +362,17 @@ export default function AdminDashboard() {
             <div>
               <p className="section-title">Códigos VIP</p>
               <p className="section-sub">Gestión de invitaciones</p>
+
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', padding: '20px', marginBottom: '24px' }}>
                 <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '16px', textTransform: 'uppercase' }}>Crear nuevo código</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
                   <div>
                     <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>CÓDIGO</p>
                     <input className="admin-input" placeholder="VIP-XXXX-XXXX" value={newCode.code} onChange={e => setNewCode(p => ({ ...p, code: e.target.value.toUpperCase() }))} />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>LABEL</p>
+                    <input className="admin-input" placeholder="Descripción" value={newCode.label ?? ''} onChange={e => setNewCode(p => ({ ...p, label: e.target.value }))} />
                   </div>
                   <div>
                     <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>MAX USOS</p>
@@ -378,21 +386,42 @@ export default function AdminDashboard() {
                     <p style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginBottom: '6px' }}>VENCE</p>
                     <input className="admin-input" type="date" value={newCode.expires_at} onChange={e => setNewCode(p => ({ ...p, expires_at: e.target.value }))} />
                   </div>
-                  <button className="admin-btn admin-btn-gold" onPointerDown={createCode} disabled={saving}>{saving ? '...' : 'CREAR'}</button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input type="checkbox" id="allows_reg" checked={newCode.allows_registration ?? true} onChange={e => setNewCode(p => ({ ...p, allows_registration: e.target.checked }))} />
+                      <label htmlFor="allows_reg" style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>Permite registro</label>
+                    </div>
+                    <button className="admin-btn admin-btn-gold" onPointerDown={createCode} disabled={saving}>{saving ? '...' : 'CREAR'}</button>
+                  </div>
                 </div>
               </div>
+
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
                 <table className="admin-table">
-                  <thead><tr><th>CÓDIGO</th><th>USOS</th><th>MAX</th><th>CHIPS</th><th>VENCE</th><th>ESTADO</th></tr></thead>
+                  <thead><tr>
+                    <th>CÓDIGO</th><th>LABEL</th><th>USOS</th><th>MAX</th>
+                    <th>CHIPS</th><th>REGISTRO</th><th>VENCE</th><th>ESTADO</th>
+                  </tr></thead>
                   <tbody>
                     {codes.map((c) => (
                       <tr key={c.id}>
                         <td style={{ color: GOLD, fontWeight: 700, fontFamily: 'monospace', fontSize: '0.8rem' }}>{c.code}</td>
+                        <td style={{ color: 'rgba(255,255,255,0.6)' }}>{c.label ?? '—'}</td>
                         <td>{c.used_count ?? 0}</td>
                         <td>{c.max_uses ?? 1}</td>
                         <td style={{ color: '#4ade80' }}>{(c.bonus_chips ?? 0).toLocaleString('es-UY')}</td>
+                        <td><span className={`badge ${c.allows_registration ? 'badge-green' : 'badge-gray'}`}>{c.allows_registration ? 'SÍ' : 'NO'}</span></td>
                         <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{c.expires_at ? new Date(c.expires_at).toLocaleDateString('es-UY') : 'Sin vencimiento'}</td>
-                        <td><span className={`badge ${(c.used_count ?? 0) >= (c.max_uses ?? 1) ? 'badge-red' : 'badge-green'}`}>{(c.used_count ?? 0) >= (c.max_uses ?? 1) ? 'AGOTADO' : 'ACTIVO'}</span></td>
+                        <td>
+                          <button className={`admin-btn ${c.is_active !== false ? 'admin-btn-green' : 'admin-btn-red'}`}
+                            style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                            onPointerDown={async () => {
+                              await supabase.from('invites').update({ is_active: c.is_active === false }).eq('id', c.id)
+                              loadSection('codes')
+                            }}>
+                            {c.is_active !== false ? 'ACTIVO' : 'INACTIVO'}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -400,8 +429,7 @@ export default function AdminDashboard() {
               </div>
             </div>
           )}
-
-          {section === 'wallets' && (
+          {section === 'wallets'{section === 'wallets' && (
             <div>
               <p className="section-title">Wallets & Transacciones</p>
               <p className="section-sub">Movimientos de fondos</p>
