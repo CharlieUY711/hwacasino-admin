@@ -30,6 +30,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [stats, setStats] = useState<any>(null)
+  const [systemStatus, setSystemStatus] = useState<Record<string, 'checking'|'online'|'offline'>>({
+    supabase: 'checking', roulette: 'checking', paypal: 'checking', telegram: 'checking'
+  })
   const [users, setUsers] = useState<any[]>([])
   const [codes, setCodes] = useState<any[]>([])
   const [transactions, setTransactions] = useState<any[]>([])
@@ -68,6 +71,21 @@ export default function AdminDashboard() {
         ])
         const totalVolume = (txData ?? []).filter((t: any) => t.type === 'debit').reduce((s: number, t: any) => s + (t.amount ?? 0), 0)
         setStats({ totalUsers, totalDeposits, totalVolume, totalRounds: roundData?.length ?? 0 })
+        
+        // System checks
+        const checks = { supabase: 'offline', roulette: 'offline', paypal: 'offline', telegram: 'offline' } as Record<string, string>
+        
+        try { await supabase.from('profiles').select('id').limit(1); checks.supabase = 'online' } catch {}
+        
+        const { data: activeRound } = await supabase.from('game_rounds').select('id').eq('status', 'betting').limit(1)
+        checks.roulette = (activeRound && activeRound.length > 0) ? 'online' : 'offline'
+        
+        const { data: tgTokens } = await supabase.from('telegram_tokens').select('id').limit(1)
+        checks.telegram = (tgTokens && tgTokens.length > 0) ? 'online' : 'offline'
+        
+        checks.paypal = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? 'online' : 'offline'
+        
+        setSystemStatus(checks as any)
         break
       }
       case 'users': {
@@ -275,14 +293,16 @@ export default function AdminDashboard() {
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', padding: '20px' }}>
                 <p style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(255,255,255,0.35)', marginBottom: '16px', textTransform: 'uppercase' }}>Estado del sistema</p>
                 {[
-                  { label: 'API Supabase', status: 'ONLINE' },
-                  { label: 'Ruleta Sophie', status: 'ONLINE' },
-                  { label: 'Pagos PayPal', status: 'ACTIVO' },
-                  { label: 'Bot Telegram', status: 'ACTIVO' },
+                  { label: 'API Supabase', key: 'supabase' },
+                  { label: 'Ruleta Sophie', key: 'roulette' },
+                  { label: 'Pagos PayPal', key: 'paypal' },
+                  { label: 'Bot Telegram', key: 'telegram' },
                 ].map((s, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                     <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)' }}>{s.label}</p>
-                    <span className="badge badge-green">{s.status}</span>
+                    <span className={adge \}>
+                      {systemStatus[s.key]?.toUpperCase() ?? 'CHECKING'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -532,3 +552,4 @@ export default function AdminDashboard() {
     </>
   )
 }
+
