@@ -9,12 +9,10 @@ export default function AdminLoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const [error, setError] = useState('')
+    const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
-
-  async function handleLogin() {
+      async function handleLogin() {
     setLoading(true)
     setError('')
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
@@ -62,6 +60,8 @@ export default function AdminLoginPage() {
     </main>
   )
 }
+
+
 
 
 
