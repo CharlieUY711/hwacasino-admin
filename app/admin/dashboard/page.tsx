@@ -429,7 +429,7 @@ export default function AdminDashboard() {
               </div>
             </div>
           )}
-          {section === 'wallets'{section === 'wallets' && (
+          {section === 'wallets' && (
             <div>
               <p className="section-title">Wallets & Transacciones</p>
               <p className="section-sub">Movimientos de fondos</p>
