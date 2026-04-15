@@ -135,12 +135,12 @@ export default function AdminDashboard() {
     setTimeout(() => setMsg(''), 3000)
   }
 
-  async function updateUserRole(userId, role) {
+  async function updateUserRole(userId: string, role: string) {
     await supabase.from('profiles').update({ role }).eq('id', userId)
     loadSection('users')
   }
 
-  async function adjustBalance(userId, amount, type) {
+  async function adjustBalance(userId: string, amount: number, type: string) {
     const { data: wallet } = await supabase.from('wallets').select('balances').eq('user_id', userId).single()
     if (!wallet) { setMsg('Error: wallet no encontrado'); return }
     const balances = wallet.balances ?? { CHIPS: 0 }
@@ -156,7 +156,7 @@ export default function AdminDashboard() {
     loadSection('users')
   }
 
-  async function approveDeposit(id, userId, amount) {
+  async function approveDeposit(id: string, userId: string, amount: number) {
     await supabase.from('deposit_requests').update({ status: 'approved' }).eq('id', id)
     const { data: wallet } = await supabase.from('wallets').select('balances').eq('user_id', userId).single()
     const balances = wallet?.balances ?? { CHIPS: 0, USD: 0 }
@@ -166,7 +166,7 @@ export default function AdminDashboard() {
     loadSection('deposits')
   }
 
-  async function saveConfig(id, field, value) {
+  async function saveConfig(id: string, field: string, value: any) {
     await supabase.from('house_config').update({ [field]: value }).eq('id', id)
     setMsg('✅ Config guardada')
     setTimeout(() => setMsg(''), 3000)
