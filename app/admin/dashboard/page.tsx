@@ -363,20 +363,18 @@ export default function AdminDashboard() {
                           </td>
                           <td><span className={`badge ${isOnline ? 'badge-green' : 'badge-gray'}`}>{isOnline ? 'ONLINE' : 'OFFLINE'}</span></td>
                           <td style={{ color: GOLD, fontWeight: 700 }}>{chips}</td>
-                          <td style={{ color: '#f87171' }}>{spent}</td>
-                          <td style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.6rem', fontFamily: 'monospace' }}>{u.invite_code ?? '—'}</td>
-                          <td style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.6rem' }}>{u.last_game ?? '—'}</td>
+                          
                           <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString('es-UY') : '—'}</td>
                           <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{lastSeen ? lastSeen.toLocaleString('es-UY') : '—'}</td>
                           <td>
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                              <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap' }}>
+                              <button className="admin-btn admin-btn-green" style={{ padding: '3px 7px', fontSize: '0.48rem' }}
                                 onPointerDown={() => { const amt = parseInt(prompt('Chips a acreditar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'credit') }}>+ Chips</button>
-                              <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                              <button className="admin-btn admin-btn-red" style={{ padding: '3px 7px', fontSize: '0.48rem' }}
                                 onPointerDown={() => { const amt = parseInt(prompt('Chips a debitar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'debit') }}>- Chips</button>
-                              <button className="admin-btn admin-btn-outline" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                              <button className="admin-btn admin-btn-outline" style={{ padding: '3px 7px', fontSize: '0.48rem' }}
                                 onPointerDown={() => resetPassword(u.email)}>📧 Reset</button>
-                              <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem', opacity: 0.7 }}
+                              <button className="admin-btn admin-btn-red" style={{ padding: '3px 7px', fontSize: '0.48rem', opacity: 0.7 }}
                                 onPointerDown={() => deleteUser(u.id, u.username)}>🗑 Eliminar</button>
                             </div>
                           </td>
@@ -443,7 +441,7 @@ export default function AdminDashboard() {
                         <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{c.expires_at ? new Date(c.expires_at).toLocaleDateString('es-UY') : 'Sin vencimiento'}</td>
                         <td>
                           <button className={`admin-btn ${c.is_active !== false ? 'admin-btn-green' : 'admin-btn-red'}`}
-                            style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                            style={{ padding: '3px 7px', fontSize: '0.48rem' }}
                             onPointerDown={async () => {
                               await supabase.from('invites').update({ is_active: c.is_active === false }).eq('id', c.id)
                               loadSection('codes')
@@ -529,8 +527,8 @@ export default function AdminDashboard() {
                         <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{d.created_at ? new Date(d.created_at).toLocaleDateString('es-UY') : '—'}</td>
                         <td>{d.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '6px' }}>
-                            <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={() => approveDeposit(d.id, d.user_id, d.amount)}>✓</button>
-                            <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={async () => { await supabase.from('deposit_requests').update({ status: 'rejected' }).eq('id', d.id); loadSection('deposits') }}>✗</button>
+                            <button className="admin-btn admin-btn-green" style={{ padding: '3px 7px', fontSize: '0.48rem' }} onPointerDown={() => approveDeposit(d.id, d.user_id, d.amount)}>✓</button>
+                            <button className="admin-btn admin-btn-red" style={{ padding: '3px 7px', fontSize: '0.48rem' }} onPointerDown={async () => { await supabase.from('deposit_requests').update({ status: 'rejected' }).eq('id', d.id); loadSection('deposits') }}>✗</button>
                           </div>
                         )}</td>
                       </tr>
@@ -552,8 +550,8 @@ export default function AdminDashboard() {
                         <td style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.6rem' }}>{w.created_at ? new Date(w.created_at).toLocaleDateString('es-UY') : '—'}</td>
                         <td>{w.status === 'pending' && (
                           <div style={{ display: 'flex', gap: '6px' }}>
-                            <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={async () => { await supabase.from('withdraw_requests').update({ status: 'approved' }).eq('id', w.id); loadSection('deposits') }}>✓</button>
-                            <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }} onPointerDown={async () => { await supabase.from('withdraw_requests').update({ status: 'rejected' }).eq('id', w.id); loadSection('deposits') }}>✗</button>
+                            <button className="admin-btn admin-btn-green" style={{ padding: '3px 7px', fontSize: '0.48rem' }} onPointerDown={async () => { await supabase.from('withdraw_requests').update({ status: 'approved' }).eq('id', w.id); loadSection('deposits') }}>✓</button>
+                            <button className="admin-btn admin-btn-red" style={{ padding: '3px 7px', fontSize: '0.48rem' }} onPointerDown={async () => { await supabase.from('withdraw_requests').update({ status: 'rejected' }).eq('id', w.id); loadSection('deposits') }}>✗</button>
                           </div>
                         )}</td>
                       </tr>
