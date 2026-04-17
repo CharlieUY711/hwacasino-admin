@@ -341,9 +341,7 @@ export default function AdminDashboard() {
               <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: '6px', overflow: 'auto' }}>
                 <table className="admin-table">
                   <thead><tr>
-                    <th>USERNAME</th><th>EMAIL</th><th>ROL</th><th>ESTADO</th>
-                    <th>CHIPS</th><th>GASTO HIST.</th><th>CÓDIGO</th>
-                    <th>ÚLTIMO JUEGO</th><th>REGISTRO</th><th>ÚLTIMA CONEXIÓN</th><th>ACCIONES</th>
+                    <th>USERNAME</th><th>EMAIL</th><th>ROL</th><th>ESTADO</th><th>CHIPS</th><th>REGISTRO</th><th>ACCIONES</th>
                   </tr></thead>
                   <tbody>
                     {filteredUsers.map((u) => {
