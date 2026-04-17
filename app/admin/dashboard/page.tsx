@@ -183,6 +183,33 @@ export default function AdminDashboard() {
     loadSection('config')
   }
 
+
+  async function deleteUser(userId: string, username: string) {
+    if (!confirm('Eliminar usuario ' + username + '? Esta accion no se puede deshacer.')) return
+    const res = await fetch('/api/admin/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId }),
+    })
+    const d = await res.json()
+    if (d.error) { setMsg('Error: ' + d.error); return }
+    setMsg('✅ Usuario eliminado')
+    setTimeout(() => setMsg(''), 3000)
+    loadSection('users')
+  }
+
+  async function resetPassword(email: string) {
+    const res = await fetch('/api/admin/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    const d = await res.json()
+    if (d.error) { setMsg('Error: ' + d.error); return }
+    setMsg('✅ Email de reset enviado a ' + email)
+    setTimeout(() => setMsg(''), 3000)
+  }
+
   const filteredUsers = users.filter(u =>
     !userSearch || u.username?.toLowerCase().includes(userSearch.toLowerCase()) || u.email?.toLowerCase().includes(userSearch.toLowerCase())
   )
@@ -342,11 +369,15 @@ export default function AdminDashboard() {
                           <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString('es-UY') : '—'}</td>
                           <td style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.6rem' }}>{lastSeen ? lastSeen.toLocaleString('es-UY') : '—'}</td>
                           <td>
-                            <div style={{ display: 'flex', gap: '6px' }}>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                               <button className="admin-btn admin-btn-green" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
                                 onPointerDown={() => { const amt = parseInt(prompt('Chips a acreditar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'credit') }}>+ Chips</button>
                               <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
                                 onPointerDown={() => { const amt = parseInt(prompt('Chips a debitar:') ?? '0'); if (amt > 0) adjustBalance(u.id, amt, 'debit') }}>- Chips</button>
+                              <button className="admin-btn admin-btn-outline" style={{ padding: '4px 10px', fontSize: '0.52rem' }}
+                                onPointerDown={() => resetPassword(u.email)}>📧 Reset</button>
+                              <button className="admin-btn admin-btn-red" style={{ padding: '4px 10px', fontSize: '0.52rem', opacity: 0.7 }}
+                                onPointerDown={() => deleteUser(u.id, u.username)}>🗑 Eliminar</button>
                             </div>
                           </td>
                         </tr>
